@@ -192,7 +192,7 @@ function execute_operation(){
 	$OPT_VERSION && version && return
 
 	if $OPT_BUILD_IMAGE; then
-		build_image_env $OPT_DISABLE_VALIDATION $OPT_SKIP_ROOT_TEST $ARGS
+		build_image_env $OPT_DISABLE_VALIDATION $OPT_SKIP_ROOT_TEST "${ARGS[@]}"
 		return
 	elif $OPT_DELETE; then
 		delete_env
