@@ -322,6 +322,7 @@ function build_image_env(){
     _check_package gcc
     _check_package package-query
     _check_package git
+    _check_package yaourt
 
     local disable_validation=$1
     shift
