@@ -125,8 +125,17 @@ function mkdir_cmd(){
 }
 
 function proot_cmd(){
-     ${PROOT_COMPAT} "${@}" || PROOT_NO_SECCOMP=1 ${PROOT_COMPAT} "${@}" || \
-        die "Error: Check if the ${CMD} arguments are correct or use the option ${CMD} -p \"-k 3.10\""
+    local proot_args="$1"
+    shift
+    if ${PROOT_COMPAT} ${proot_args} "${SH[@]}" "-c" ":"
+    then
+        ${PROOT_COMPAT} ${proot_args} "${@}"
+    elif PROOT_NO_SECCOMP=1 ${PROOT_COMPAT} ${proot_args} "${SH[@]}" "-c" ":"
+    then
+        PROOT_NO_SECCOMP=1 ${PROOT_COMPAT} ${proot_args} "${@}"
+    else
+        die "Error: Check if the ${CMD} arguments are correct and if the kernel is too old use the option ${CMD} -p \"-k 3.10\""
+    fi
 }
 
 function download_cmd(){
@@ -231,9 +240,9 @@ function _run_env_with_proot(){
 
     if [ "$1" != "" ]
     then
-        JUNEST_ENV=1 proot_cmd ${proot_args} "${SH[@]}" "-c" "$(insert_quotes_on_spaces "${@}")"
+        JUNEST_ENV=1 proot_cmd "${proot_args}" "${SH[@]}" "-c" "$(insert_quotes_on_spaces "${@}")"
     else
-        JUNEST_ENV=1 proot_cmd ${proot_args} "${SH[@]}"
+        JUNEST_ENV=1 proot_cmd "${proot_args}" "${SH[@]}"
     fi
 }
 
@@ -314,7 +323,9 @@ function _install_from_aur(){
 }
 
 function build_image_env(){
-# The function must run on ArchLinux with non-root privileges.
+    umask 022
+
+    # The function must runs on ArchLinux with non-root privileges.
     (( EUID == 0 )) && \
         die "You cannot build with root privileges."
 
@@ -341,11 +352,16 @@ function build_image_env(){
     sudo pacstrap -G -M -d ${maindir}/root pacman coreutils libunistring archlinux-keyring sed
     sudo bash -c "echo 'Server = $DEFAULT_MIRROR' >> ${maindir}/root/etc/pacman.d/mirrorlist"
 
+    info "Install ${NAME} script..."
+    sudo pacman --noconfirm --root ${maindir}/root -S git
+    _install_from_aur ${maindir} "${CMD}-git" "${CMD}.install"
+    sudo pacman --noconfirm --root ${maindir}/root -Rsn git
+
     info "Generating the locales..."
     # sed command is required for locale-gen
     sudo ln -sf /usr/share/zoneinfo/posix/UTC ${maindir}/root/etc/localtime
     sudo bash -c "echo 'en_US.UTF-8 UTF-8' >> ${maindir}/root/etc/locale.gen"
-    sudo arch-chroot ${maindir}/root locale-gen
+    sudo ${maindir}/root/opt/junest/bin/jchroot ${maindir}/root locale-gen
     sudo bash -c "echo 'LANG = \"en_US.UTF-8\"' >> ${maindir}/root/etc/locale.conf"
 
     info "Generating the metadata info..."
@@ -389,13 +405,9 @@ function build_image_env(){
     sudo bash -c "echo 'export PATH=/opt/yaourt/bin:\$PATH' > ${maindir}/root/etc/profile.d/${CMD}.sh"
     sudo chmod +x ${maindir}/root/etc/profile.d/${CMD}.sh
 
-    info "Install ${NAME} script..."
-    sudo pacman --noconfirm --root ${maindir}/root -S git
-    _install_from_aur ${maindir} "${CMD}-git" "${CMD}.install"
-    sudo pacman --noconfirm --root ${maindir}/root -Rsn git
-
     info "Setting up the pacman keyring (this might take a while!)..."
-    sudo arch-chroot ${maindir}/root bash -c "pacman-key --init; pacman-key --populate archlinux"
+    sudo ${maindir}/root/opt/junest/bin/jchroot ${maindir}/root bash -c \
+        "pacman-key --init; pacman-key --populate archlinux; [ -e /etc/pacman.d/gnupg/S.gpg-agent ] && gpg-connect-agent -S /etc/pacman.d/gnupg/S.gpg-agent killagent /bye"
 
     local extra
     for extra in $extra_packages
